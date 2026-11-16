@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Star, NotebookPen, Sun, Moon, ArrowLeft, ArrowRight, X, RotateCcw, Timer, Play, Trash2, Check } from 'lucide-react'
+import { Star, NotebookPen, Sun, Moon, ArrowLeft, ArrowRight, X, RotateCcw, Timer, Play, Library as LibIcon, Check } from 'lucide-react'
 import data from './data.json'
 
 const { topics: TOPICS, questions: BANK } = data
 const LETTERS = 'ABCDEF'
+const ok = (q, sel) => sel.length === q.answers.length && q.answers.every((a) => sel.includes(a))
+const isAns = (a) => !!a && a.sel.length > 0
 const COUNTS = TOPICS.map((_, i) => BANK.filter((q) => q.topic === i).length)
 
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } }
@@ -50,9 +52,12 @@ function ThemeToggle({ theme, setTheme }) {
   )
 }
 
-function Home({ onStart, favCount, openFavs, theme, setTheme }) {
+function Home({ onStart, favs, stats, favCount, openFavs, theme, setTheme }) {
   const [sel, setSel] = useState([])
   const [find, setFind] = useState('')
+  const [flt, setFlt] = useState('all')
+  const [lim, setLim] = useState(0)
+  const [auto, setAuto] = useState(true)
   const [repeats, setRepeats] = useState(false)
   const [mode, setMode] = useState('practice')
   const [minutes, setMinutes] = useState(30)
@@ -61,13 +66,14 @@ function Home({ onStart, favCount, openFavs, theme, setTheme }) {
   const [k, setK] = useState(0)
   useEffect(() => { const t = setInterval(() => setK((x) => (x >= 90 ? 0 : x + 1)), 130); return () => clearInterval(t) }, [])
 
-  const pool = useMemo(() => BANK.filter((q) => !sel.length || sel.includes(q.topic))
-    .flatMap((q) => Array(repeats ? q.exams.length : 1).fill(q)), [sel, repeats])
+  const pool = useMemo(() => BANK.filter((q) => (!sel.length || sel.includes(q.topic)) && (flt === 'all' || (flt === 'new' ? !stats[q.id] : flt === 'wrong' ? stats[q.id]?.l === 'w' : favs.includes(q.id))))
+    .flatMap((q) => Array(repeats ? q.exams.length : 1).fill(q)), [sel, repeats, flt, stats, favs])
 
   const start = () => {
     let items = pool
     if (shuffleQ) items = shuffle(items)
-    onStart({ mode, minutes, items: items.map((q) => ({ q, order: shuffleA ? shuffle(q.options.map((_, i) => i)) : q.options.map((_, i) => i) })) })
+    if (lim > 0) items = items.slice(0, lim)
+    onStart({ mode, minutes, auto, items: items.map((q) => ({ q, order: shuffleA ? shuffle(q.options.map((_, i) => i)) : q.options.map((_, i) => i) })) })
   }
 
   return (
@@ -75,7 +81,7 @@ function Home({ onStart, favCount, openFavs, theme, setTheme }) {
       <header className="bar">
         <div className="brand"><span className="brand-dot" />Colony</div>
         <div className="bar-r">
-          <button className="chip-btn" onClick={openFavs}><Star size={16} /> Saved <b>{favCount}</b></button>
+          <button className="chip-btn" onClick={openFavs}><LibIcon size={16} /> Library <b>{favCount}</b></button>
           <ThemeToggle theme={theme} setTheme={setTheme} />
         </div>
       </header>
@@ -98,13 +104,16 @@ function Home({ onStart, favCount, openFavs, theme, setTheme }) {
             </div>
           </div>
           <Seg label="Questions" value={repeats} set={setRepeats} opts={[[false, 'Unique only'], [true, 'Include repeats']]} />
+          <Seg label="Show" value={flt} set={setFlt} opts={[['all', 'All'], ['new', 'Unseen'], ['wrong', 'Missed'], ['fav', 'Saved']]} />
           <Seg label="Session" value={mode} set={setMode} opts={[['practice', 'Practice'], ['exam', 'Timed exam']]} />
           {mode === 'exam' && (
             <label className="field inline"><Timer size={16} /> Minutes
               <input type="number" min="1" max="240" value={minutes} onChange={(e) => setMinutes(Math.max(1, +e.target.value || 1))} />
             </label>
           )}
+          <label className="field inline">Limit <input type="number" min="0" value={lim} onChange={(e) => setLim(Math.max(0, +e.target.value || 0))} /> <small>0 = all</small></label>
           <div className="toggles">
+            <Tog on={auto} set={setAuto}>Auto-advance on correct</Tog>
             <Tog on={shuffleQ} set={setShuffleQ}>Shuffle questions</Tog>
             <Tog on={shuffleA} set={setShuffleA}>Shuffle answers</Tog>
           </div>
@@ -147,27 +156,35 @@ function Quiz({ session, favs, toggleFav, notes, setNote, onFinish, onExit, them
   const left = minutes * 60 - secs
   useEffect(() => { if (exam && left <= 0) finish() }, [left]) // eslint-disable-line
 
-  const it = items[i], q = it.q, picked = ans[i], reveal = !exam && picked !== undefined
-  const pick = (oi) => { if (!exam && picked !== undefined) return; setAns((a) => ({ ...a, [i]: oi })) }
+  const it = items[i], q = it.q, a = ans[i] || { sel: [], done: false }, multi = q.answers.length > 1
+  const reveal = !exam && a.done, good = ok(q, a.sel)
+  const pick = (oi) => {
+    if (!exam && a.done) return
+    setAns((s) => { const c = s[i] || { sel: [] }; const sel = multi ? (c.sel.includes(oi) ? c.sel.filter((x) => x !== oi) : [...c.sel, oi]) : [oi]; return { ...s, [i]: { sel, done: !exam && !multi } } })
+  }
+  const check = () => a.sel.length && setAns((s) => ({ ...s, [i]: { ...s[i], done: true } }))
   const go = (d) => setI((x) => Math.min(items.length - 1, Math.max(0, x + d)))
+  useEffect(() => { window.scrollTo({ top: 0 }) }, [i])
+  useEffect(() => { if (session.auto && a.done && good && i < items.length - 1) { const t = setTimeout(() => go(1), 1100); return () => clearTimeout(t) } }, [i, a.done]) // eslint-disable-line
 
   useEffect(() => {
     const onKey = (e) => {
       if (noteOpen || ['TEXTAREA', 'INPUT'].includes(e.target.tagName)) return
       if (e.key === 'ArrowRight') go(1)
       else if (e.key === 'ArrowLeft') go(-1)
+      else if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { if (multi && !a.done && !exam) check(); else go(1) }
       else if (/^[1-6]$/.test(e.key) && it.order[+e.key - 1] !== undefined) pick(it.order[+e.key - 1])
     }
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
   })
 
-  const status = (k) => (ans[k] === undefined ? null : exam ? 'a' : ans[k] === items[k].q.answer ? 'c' : 'w')
+  const status = (k) => { const x = ans[k]; return !isAns(x) ? null : exam || !x.done ? 'a' : ok(items[k].q, x.sel) ? 'c' : 'w' }
   const faved = favs.includes(q.id)
 
   return (
     <main className="quiz">
       <header className="bar">
-        <button className="icon-btn" aria-label="Leave session" onClick={onExit}><X size={18} /></button>
+        <button className="icon-btn" aria-label="Leave session" onClick={() => onExit(items, ans)}><X size={18} /></button>
         <div className={`clock ${exam && left < 60 ? 'urgent' : ''}`}><Timer size={16} />{fmt(exam ? Math.max(0, left) : secs)}</div>
         <div className="bar-r"><ThemeToggle theme={theme} setTheme={setTheme} />
           <button className="chip-btn solid" onClick={finish}>Finish</button></div>
@@ -176,12 +193,12 @@ function Quiz({ session, favs, toggleFav, notes, setNote, onFinish, onExit, them
         <aside className="side">
           <Dish n={items.length} status={status} cur={i} />
           <div className="meter"><motion.div animate={{ width: `${((i + 1) / items.length) * 100}%` }} /></div>
-          <p className="count">{Object.keys(ans).length} answered · question {i + 1} of {items.length}</p>
+          <p className="count">{Object.values(ans).filter(isAns).length} answered · question {i + 1} of {items.length}</p>
         </aside>
         <AnimatePresence mode="wait">
           <motion.section key={i} className="card" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.2 }}>
             <div className="card-top">
-              <span className="topic">{TOPICS[q.topic]}</span>
+              <span className="topic">{TOPICS[q.topic]}{multi ? ' · select all that apply' : ''}</span>
               <div className="acts">
                 <button className={`icon-btn ${notes[q.id] ? 'has' : ''}`} aria-label="Add note" onClick={() => setNoteOpen(true)}><NotebookPen size={18} /></button>
                 <button className={`icon-btn ${faved ? 'fav' : ''}`} aria-label="Save question" aria-pressed={faved} onClick={() => toggleFav(q.id)}><Star size={18} fill={faved ? 'currentColor' : 'none'} /></button>
@@ -190,19 +207,20 @@ function Quiz({ session, favs, toggleFav, notes, setNote, onFinish, onExit, them
             <h2 className="stem">{q.stem}</h2>
             <div className="opts">
               {it.order.map((oi, pos) => {
-                const cls = reveal && oi === q.answer ? 'right' : reveal && picked === oi ? 'wrong' : picked === oi ? 'picked' : ''
+                const cls = reveal && q.answers.includes(oi) ? 'right' : reveal && a.sel.includes(oi) ? 'wrong' : a.sel.includes(oi) ? 'picked' : ''
                 return (
-                  <motion.button key={oi} className={`opt ${cls}`} whileTap={{ scale: 0.985 }} onClick={() => pick(oi)} disabled={reveal}>
+                  <motion.button key={oi} className={`opt ${multi ? 'multi' : ''} ${cls}`} whileTap={{ scale: 0.985 }} onClick={() => pick(oi)} disabled={reveal}>
                     <span className="letter">{cls === 'right' ? <Check size={16} /> : cls === 'wrong' ? <X size={16} /> : LETTERS[pos]}</span>
                     <span>{q.options[oi]}</span>
                   </motion.button>
                 )
               })}
             </div>
+            {multi && !exam && !a.done && <button className="chip-btn solid" onClick={check} disabled={!a.sel.length}>Check answer</button>}
             <AnimatePresence>
               {reveal && (
                 <motion.div className="why" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-                  <p><b>{picked === q.answer ? 'Correct.' : `Answer: ${LETTERS[it.order.indexOf(q.answer)]}.`}</b> {q.explanation}</p>
+                  <p><b>{good ? 'Correct.' : `Answer: ${q.answers.map((x) => LETTERS[it.order.indexOf(x)]).sort().join(', ')}.`}</b> {q.explanation}</p>
                   <div className="tags">{q.exams.map((e) => <span key={e}>{e}</span>)}</div>
                 </motion.div>
               )}
@@ -238,12 +256,12 @@ function NoteSheet({ initial, onSave, onClose }) {
 
 function Results({ res, onRetake, onHome }) {
   const { items, ans, times } = res
-  const c = items.filter((x, k) => ans[k] === x.q.answer).length
-  const w = Object.keys(ans).length - c
+  const c = items.filter((x, k) => isAns(ans[k]) && ok(x.q, ans[k].sel)).length
+  const w = Object.values(ans).filter(isAns).length - c
   const u = items.length - c - w
   const pct = Math.round((c / items.length) * 100)
   const avg = items.length ? Object.values(times).reduce((a, b) => a + b, 0) / items.length : 0
-  const retake = (withU) => onRetake(items.filter((x, k) => ans[k] !== undefined ? ans[k] !== x.q.answer : withU))
+  const retake = (withU) => onRetake(items.filter((x, k) => isAns(ans[k]) ? !ok(x.q, ans[k].sel) : withU))
   const R = 54, C = 2 * Math.PI * R
   return (
     <main className="results">
@@ -267,27 +285,40 @@ function Results({ res, onRetake, onHome }) {
             <button className="chip-btn" disabled={!w && !u} onClick={() => retake(true)}>Wrong + skipped ({w + u})</button>
             <button className="chip-btn" onClick={onHome}>Home</button>
           </div>
+          <details className="review"><summary>Review mistakes and skipped</summary>
+            {items.map((x, k) => ({ x, k })).filter(({ x, k }) => !isAns(ans[k]) || !ok(x.q, ans[k].sel)).map(({ x, k }) => (
+              <div className="favcard" key={k}><p>{x.q.stem}</p><small>{x.q.answers.map((a) => x.q.options[a]).join(' · ')}</small>{x.q.explanation && <em>{x.q.explanation}</em>}</div>
+            ))}
+          </details>
         </div>
       </div>
     </main>
   )
 }
 
-function Favs({ favs, notes, remove, onPractice, onClose }) {
-  const list = BANK.filter((q) => favs.includes(q.id))
+function Library({ favs, notes, toggle, onPractice, onClose }) {
+  const [q, setQ] = useState('')
+  const [only, setOnly] = useState(false)
+  const list = useMemo(() => {
+    const w = q.toLowerCase().split(/\s+/).filter(Boolean)
+    return BANK.filter((x) => (!only || favs.includes(x.id)) && w.every((t) => `${x.stem} ${x.options.join(' ')} ${TOPICS[x.topic]}`.toLowerCase().includes(t)))
+  }, [q, only, favs])
   return (
     <motion.div className="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
       <motion.aside className="drawer" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} onClick={(e) => e.stopPropagation()}>
-        <div className="card-top"><h3>Saved questions</h3><button className="icon-btn" aria-label="Close" onClick={onClose}><X size={18} /></button></div>
-        {!list.length && <p className="empty">Nothing saved yet. Tap the star on any question to keep it here.</p>}
-        {list.map((q) => (
-          <div className="fav" key={q.id}>
-            <p>{q.stem}</p><small>{q.options[q.answer]}</small>
-            {notes[q.id] && <em>{notes[q.id]}</em>}
-            <button className="icon-btn" aria-label="Remove" onClick={() => remove(q.id)}><Trash2 size={16} /></button>
+        <div className="card-top"><h3>Library</h3><button className="icon-btn" aria-label="Close" onClick={onClose}><X size={18} /></button></div>
+        <input type="search" className="find" autoFocus placeholder="Search questions, answers, topics" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Tog on={only} set={setOnly}>Saved only ({favs.length})</Tog>
+        <p className="empty">{list.length} question{list.length === 1 ? '' : 's'}</p>
+        {list.slice(0, 60).map((x) => (
+          <div className="favcard" key={x.id}>
+            <p>{x.stem}</p><small>{x.answers.map((a) => x.options[a]).join(' · ')}</small>
+            {notes[x.id] && <em>{notes[x.id]}</em>}
+            <button className={`icon-btn ${favs.includes(x.id) ? 'fav' : ''}`} aria-label="Save" onClick={() => toggle(x.id)}><Star size={16} fill={favs.includes(x.id) ? 'currentColor' : 'none'} /></button>
           </div>
         ))}
-        {!!list.length && <button className="go" onClick={() => onPractice(list)}><Play size={18} fill="currentColor" /> Practice saved ({list.length})</button>}
+        {list.length > 60 && <p className="empty">Showing the first 60. Refine your search to narrow down.</p>}
+        {!!list.length && <button className="go" onClick={() => onPractice(list)}><Play size={18} fill="currentColor" /> Practice these ({list.length})</button>}
       </motion.aside>
     </motion.div>
   )
@@ -297,6 +328,7 @@ export default function App() {
   const [theme, setTheme] = usePersist('colony_theme', 'dark')
   const [favs, setFavs] = usePersist('colony_favs', [])
   const [notes, setNotes] = usePersist('colony_notes', {})
+  const [stats, setStats] = usePersist('colony_stats', {})
   const [view, setView] = useState('home')
   const [session, setSession] = useState(null)
   const [res, setRes] = useState(null)
@@ -304,17 +336,26 @@ export default function App() {
   useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
 
   const begin = (s) => { setSession({ ...s, id: Math.random() }); setView('quiz') }
-  const practice = (qs) => { setFavOpen(false); begin({ mode: 'practice', minutes: 0, items: qs.map((q) => ({ q, order: q.options.map((_, i) => i) })) }) }
+  const practice = (qs) => { setFavOpen(false); begin({ mode: 'practice', minutes: 0, auto: true, items: qs.map((q) => ({ q, order: q.options.map((_, i) => i) })) }) }
   const toggleFav = (id) => setFavs((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]))
   const setNote = (id, t) => setNotes((n) => { const c = { ...n }; if (t) c[id] = t; else delete c[id]; return c })
+  const record = (items, ans) => setStats((s) => {
+    const n = { ...s }
+    items.forEach((it, k) => {
+      const x = ans[k]; if (!isAns(x) || (!x.done && session.mode !== 'exam')) return
+      const g = ok(it.q, x.sel), p = n[it.q.id] || { a: 0, c: 0, w: 0 }
+      n[it.q.id] = { a: p.a + 1, c: p.c + (g ? 1 : 0), w: p.w + (g ? 0 : 1), l: g ? 'c' : 'w' }
+    })
+    return n
+  })
   const t = { theme, setTheme }
 
   return (
     <>
-      {view === 'home' && <Home onStart={begin} favCount={favs.length} openFavs={() => setFavOpen(true)} {...t} />}
-      {view === 'quiz' && <Quiz key={session.id} session={session} favs={favs} toggleFav={toggleFav} notes={notes} setNote={setNote} onExit={() => setView('home')} onFinish={(items, ans, times) => { setRes({ items, ans, times }); setView('results') }} {...t} />}
-      {view === 'results' && <Results res={res} onHome={() => setView('home')} onRetake={(qs) => begin({ mode: 'practice', minutes: 0, items: qs })} />}
-      <AnimatePresence>{favOpen && <Favs key="f" favs={favs} notes={notes} remove={toggleFav} onPractice={practice} onClose={() => setFavOpen(false)} />}</AnimatePresence>
+      {view === 'home' && <Home onStart={begin} favs={favs} stats={stats} favCount={favs.length} openFavs={() => setFavOpen(true)} {...t} />}
+      {view === 'quiz' && <Quiz key={session.id} session={session} favs={favs} toggleFav={toggleFav} notes={notes} setNote={setNote} onExit={(items, ans) => { record(items, ans); setView('home') }} onFinish={(items, ans, times) => { record(items, ans); setRes({ items, ans, times }); setView('results') }} {...t} />}
+      {view === 'results' && <Results res={res} onHome={() => setView('home')} onRetake={(qs) => begin({ mode: 'practice', minutes: 0, auto: true, items: qs })} />}
+      <AnimatePresence>{favOpen && <Library key="f" favs={favs} notes={notes} toggle={toggleFav} onPractice={practice} onClose={() => setFavOpen(false)} />}</AnimatePresence>
     </>
   )
 }
