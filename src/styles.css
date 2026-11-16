@@ -91,3 +91,17 @@ input[type=number]{width:90px}
 .review{margin-top:22px;display:grid;gap:8px}.review summary{cursor:pointer;font-weight:700;margin-bottom:6px}.review .favcard{padding-right:16px}
 small{color:var(--mute)}
 .kpis{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}.kpis span{background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:5px 14px;font-size:.85rem;color:var(--mute)}.kpis b{color:var(--amber);font-family:var(--display);font-size:1.05rem;margin-right:4px}
+
+.scrim.mid{align-items:center}.dlg{border-radius:24px;max-width:420px;margin:20px}.dlg p{color:var(--mute)}.acts{margin-left:auto}
+@media(max-width:520px){.seg button{padding:9px 2px;font-size:.78rem}}
+
+.prog{display:grid;gap:10px;margin:16px 0 4px;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:16px;max-width:430px}
+.prog-top{display:flex;justify-content:space-between;align-items:baseline;font-weight:700}.prog-top small{color:var(--mute);font-weight:500}
+.xpbar{height:8px;border-radius:9px;background:var(--panel2);overflow:hidden}.xpbar div{height:100%;background:linear-gradient(90deg,var(--amber),var(--ok));border-radius:9px}
+.prog-row{display:flex;gap:10px;flex-wrap:wrap}
+.pill{display:inline-flex;gap:6px;align-items:center;padding:5px 12px;border-radius:99px;border:1px solid var(--line);background:var(--panel2);font-size:.85rem;font-weight:600;color:var(--mute)}
+.pill.hot{color:var(--amber);border-color:var(--amber)}button.pill:hover{border-color:var(--amber)}
+.days{display:flex;gap:4px;align-items:flex-end;height:36px}.days i{flex:1;border-radius:4px;background:var(--panel2)}.days i.on{background:var(--ok)}.days i.goal{background:var(--amber)}
+.resume{display:flex;align-items:center;gap:12px;background:color-mix(in srgb,var(--amber) 14%,var(--panel2));border:1px solid var(--amber);border-radius:16px;padding:12px 14px}.resume>div{flex:1;display:grid}
+.xp{color:var(--amber);font:700 1.1rem var(--display);margin:6px 0 0}.row2{display:flex;gap:8px;flex-wrap:wrap}
+.tchip{background:linear-gradient(90deg,color-mix(in srgb,var(--ok) 32%,var(--panel2)) var(--p,0%),var(--panel2) var(--p,0%))}.tchip.on{background:var(--amber)}
