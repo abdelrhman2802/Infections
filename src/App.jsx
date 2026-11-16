@@ -7,7 +7,6 @@ const { topics: TOPICS, questions: BANK } = data
 const LETTERS = 'ABCDEF'
 const ok = (q, sel) => sel.length === q.answers.length && q.answers.every((a) => sel.includes(a))
 const isAns = (a) => !!a && a.sel.length > 0
-const COUNTS = TOPICS.map((_, i) => BANK.filter((q) => q.topic === i).length)
 
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } }
 function usePersist(k, d) {
@@ -56,24 +55,30 @@ function Home({ onStart, favs, stats, favCount, openFavs, theme, setTheme }) {
   const [sel, setSel] = useState([])
   const [find, setFind] = useState('')
   const [flt, setFlt] = useState('all')
-  const [lim, setLim] = useState(0)
-  const [auto, setAuto] = useState(true)
-  const [repeats, setRepeats] = useState(false)
-  const [mode, setMode] = useState('practice')
-  const [minutes, setMinutes] = useState(30)
-  const [shuffleQ, setShuffleQ] = useState(false)
-  const [shuffleA, setShuffleA] = useState(false)
+  const [lim, setLim] = P('lim')
+  const [auto, setAuto] = P('auto')
+  const [showTopic, setShowTopic] = P('showTopic')
+  const [pf, setPf] = usePersist('colony_prefs', { repeats: false, mode: 'practice', minutes: 30, shuffleQ: false, shuffleA: false, lim: 0, auto: true, showTopic: false })
+  const P = (k) => [pf[k], (v) => setPf((p) => ({ ...p, [k]: v }))]
+  const [repeats, setRepeats] = P('repeats')
+  const [mode, setMode] = P('mode')
+  const [minutes, setMinutes] = P('minutes')
+  const [shuffleQ, setShuffleQ] = P('shuffleQ')
+  const [shuffleA, setShuffleA] = P('shuffleA')
   const [k, setK] = useState(0)
   useEffect(() => { const t = setInterval(() => setK((x) => (x >= 90 ? 0 : x + 1)), 130); return () => clearInterval(t) }, [])
 
-  const pool = useMemo(() => BANK.filter((q) => (!sel.length || sel.includes(q.topic)) && (flt === 'all' || (flt === 'new' ? !stats[q.id] : flt === 'wrong' ? stats[q.id]?.l === 'w' : favs.includes(q.id))))
+  const passes = (q) => flt === 'all' || (flt === 'new' ? !stats[q.id] : flt === 'wrong' ? stats[q.id]?.l === 'w' : flt === 'due' ? !!stats[q.id] && stats[q.id].d <= Date.now() : favs.includes(q.id))
+  const counts = useMemo(() => TOPICS.map((_, i) => BANK.filter((q) => q.topic === i && passes(q)).length), [flt, stats, favs]) // eslint-disable-line
+  const kp = useMemo(() => ({ m: BANK.filter((q) => stats[q.id]?.b >= 3).length, d: BANK.filter((q) => stats[q.id] && stats[q.id].d <= Date.now()).length, w: BANK.filter((q) => stats[q.id]?.l === 'w').length }), [stats])
+  const pool = useMemo(() => BANK.filter((q) => (!sel.length || sel.includes(q.topic)) && passes(q))
     .flatMap((q) => Array(repeats ? q.exams.length : 1).fill(q)), [sel, repeats, flt, stats, favs])
 
   const start = () => {
     let items = pool
     if (shuffleQ) items = shuffle(items)
     if (lim > 0) items = items.slice(0, lim)
-    onStart({ mode, minutes, auto, items: items.map((q) => ({ q, order: shuffleA ? shuffle(q.options.map((_, i) => i)) : q.options.map((_, i) => i) })) })
+    onStart({ mode, minutes, auto, showTopic, items: items.map((q) => ({ q, order: shuffleA ? shuffle(q.options.map((_, i) => i)) : q.options.map((_, i) => i) })) })
   }
 
   return (
@@ -89,6 +94,7 @@ function Home({ onStart, favs, stats, favCount, openFavs, theme, setTheme }) {
         <div className="hero-txt">
           <h1>Infectious diseases, one colony at a time.</h1>
           <p>{BANK.length} exam-sourced MCQs across {TOPICS.length} topics. Every answer you give grows on the plate.</p>
+          <div className="kpis"><span><b>{kp.m}</b> mastered</span><span><b>{kp.d}</b> due today</span><span><b>{kp.w}</b> missed</span></div>
           <Dish n={64} status={(i) => (i < k ? (i % 7 === 3 ? 'w' : 'c') : null)} className="hero-dish" />
         </div>
         <motion.form className="setup" onSubmit={(e) => { e.preventDefault(); start() }} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: 'easeOut' }}>
@@ -97,15 +103,15 @@ function Home({ onStart, favs, stats, favCount, openFavs, theme, setTheme }) {
               {sel.length > 0 && <button type="button" className="link" onClick={() => setSel([])}>Clear</button>}</div>
             <input type="search" className="find" placeholder="Search topics" value={find} onChange={(e) => setFind(e.target.value)} />
             <div className="topic-box">
-              {TOPICS.map((t, i) => t.toLowerCase().includes(find.toLowerCase()) && (
+              {TOPICS.map((t, i) => counts[i] > 0 && t.toLowerCase().includes(find.toLowerCase()) && (
                 <button type="button" key={i} aria-pressed={sel.includes(i)} className={`tchip ${sel.includes(i) ? 'on' : ''}`}
-                  onClick={() => setSel((x) => (x.includes(i) ? x.filter((y) => y !== i) : [...x, i]))}>{t} <i>{COUNTS[i]}</i></button>
+                  onClick={() => setSel((x) => (x.includes(i) ? x.filter((y) => y !== i) : [...x, i]))}>{t} <i>{counts[i]}</i></button>
               ))}
             </div>
           </div>
           <Seg label="Questions" value={repeats} set={setRepeats} opts={[[false, 'Unique only'], [true, 'Include repeats']]} />
-          <Seg label="Show" value={flt} set={setFlt} opts={[['all', 'All'], ['new', 'Unseen'], ['wrong', 'Missed'], ['fav', 'Saved']]} />
-          <Seg label="Session" value={mode} set={setMode} opts={[['practice', 'Practice'], ['exam', 'Timed exam']]} />
+          <Seg label="Show" value={flt} set={setFlt} opts={[['all', 'All'], ['due', 'Due'], ['new', 'Unseen'], ['wrong', 'Missed'], ['fav', 'Saved']]} />
+          <Seg label="Session" value={mode} set={setMode} opts={[['practice', 'Practice'], ['exam', 'Timed exam'], ['study', 'Study']]} />
           {mode === 'exam' && (
             <label className="field inline"><Timer size={16} /> Minutes
               <input type="number" min="1" max="240" value={minutes} onChange={(e) => setMinutes(Math.max(1, +e.target.value || 1))} />
@@ -114,6 +120,7 @@ function Home({ onStart, favs, stats, favCount, openFavs, theme, setTheme }) {
           <label className="field inline">Limit <input type="number" min="0" value={lim} onChange={(e) => setLim(Math.max(0, +e.target.value || 0))} /> <small>0 = all</small></label>
           <div className="toggles">
             <Tog on={auto} set={setAuto}>Auto-advance on correct</Tog>
+            <Tog on={showTopic} set={setShowTopic}>Show chapter name</Tog>
             <Tog on={shuffleQ} set={setShuffleQ}>Shuffle questions</Tog>
             <Tog on={shuffleA} set={setShuffleA}>Shuffle answers</Tog>
           </div>
@@ -142,12 +149,15 @@ const Tog = ({ on, set, children }) => (
 function Quiz({ session, favs, toggleFav, notes, setNote, onFinish, onExit, theme, setTheme }) {
   const { items, mode, minutes } = session
   const exam = mode === 'exam'
+  const study = mode === 'study'
   const [i, setI] = useState(0)
   const [ans, setAns] = useState({})
   const [secs, setSecs] = useState(0)
   const [noteOpen, setNoteOpen] = useState(false)
   const times = useRef({})
   const last = useRef(Date.now())
+  const front = useRef(0)
+  const adv = useRef(null)
 
   useEffect(() => { const t = setInterval(() => setSecs((s) => s + 1), 1000); return () => clearInterval(t) }, [])
   useEffect(() => { last.current = Date.now(); const idx = i; return () => { times.current[idx] = (times.current[idx] || 0) + (Date.now() - last.current) / 1000 } }, [i])
@@ -157,15 +167,17 @@ function Quiz({ session, favs, toggleFav, notes, setNote, onFinish, onExit, them
   useEffect(() => { if (exam && left <= 0) finish() }, [left]) // eslint-disable-line
 
   const it = items[i], q = it.q, a = ans[i] || { sel: [], done: false }, multi = q.answers.length > 1
-  const reveal = !exam && a.done, good = ok(q, a.sel)
+  const reveal = study || (!exam && a.done), good = ok(q, a.sel)
+  const maybeAdv = (sel) => { if (session.auto && ok(q, sel) && i >= front.current && i < items.length - 1) { clearTimeout(adv.current); adv.current = setTimeout(() => go(1), 1100) } }
   const pick = (oi) => {
-    if (!exam && a.done) return
+    if (study || (!exam && a.done)) return
     setAns((s) => { const c = s[i] || { sel: [] }; const sel = multi ? (c.sel.includes(oi) ? c.sel.filter((x) => x !== oi) : [...c.sel, oi]) : [oi]; return { ...s, [i]: { sel, done: !exam && !multi } } })
+    if (!multi && !exam) maybeAdv([oi])
   }
-  const check = () => a.sel.length && setAns((s) => ({ ...s, [i]: { ...s[i], done: true } }))
-  const go = (d) => setI((x) => Math.min(items.length - 1, Math.max(0, x + d)))
+  const check = () => { if (!a.sel.length) return; setAns((s) => ({ ...s, [i]: { ...s[i], done: true } })); maybeAdv(a.sel) }
+  const go = (d) => { clearTimeout(adv.current); if (d < 0) front.current = Math.max(front.current, i); setI((x) => Math.min(items.length - 1, Math.max(0, x + d))) }
   useEffect(() => { window.scrollTo({ top: 0 }) }, [i])
-  useEffect(() => { if (session.auto && a.done && good && i < items.length - 1) { const t = setTimeout(() => go(1), 1100); return () => clearTimeout(t) } }, [i, a.done]) // eslint-disable-line
+  useEffect(() => () => clearTimeout(adv.current), []) // eslint-disable-line
 
   useEffect(() => {
     const onKey = (e) => {
@@ -187,7 +199,7 @@ function Quiz({ session, favs, toggleFav, notes, setNote, onFinish, onExit, them
         <button className="icon-btn" aria-label="Leave session" onClick={() => onExit(items, ans)}><X size={18} /></button>
         <div className={`clock ${exam && left < 60 ? 'urgent' : ''}`}><Timer size={16} />{fmt(exam ? Math.max(0, left) : secs)}</div>
         <div className="bar-r"><ThemeToggle theme={theme} setTheme={setTheme} />
-          <button className="chip-btn solid" onClick={finish}>Finish</button></div>
+          <button className="chip-btn solid" onClick={study ? () => onExit(items, {}) : finish}>{study ? 'Done' : 'Finish'}</button></div>
       </header>
       <div className="quiz-grid">
         <aside className="side">
@@ -198,7 +210,7 @@ function Quiz({ session, favs, toggleFav, notes, setNote, onFinish, onExit, them
         <AnimatePresence mode="wait">
           <motion.section key={i} className="card" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.2 }}>
             <div className="card-top">
-              <span className="topic">{TOPICS[q.topic]}{multi ? ' · select all that apply' : ''}</span>
+              <span className="topic">{[session.showTopic && TOPICS[q.topic], multi && 'Select all that apply'].filter(Boolean).join(' · ')}</span>
               <div className="acts">
                 <button className={`icon-btn ${notes[q.id] ? 'has' : ''}`} aria-label="Add note" onClick={() => setNoteOpen(true)}><NotebookPen size={18} /></button>
                 <button className={`icon-btn ${faved ? 'fav' : ''}`} aria-label="Save question" aria-pressed={faved} onClick={() => toggleFav(q.id)}><Star size={18} fill={faved ? 'currentColor' : 'none'} /></button>
@@ -228,7 +240,7 @@ function Quiz({ session, favs, toggleFav, notes, setNote, onFinish, onExit, them
             {notes[q.id] && <p className="note-preview">{notes[q.id]}</p>}
             <div className="nav">
               <button className="chip-btn" onClick={() => go(-1)} disabled={i === 0}><ArrowLeft size={16} /> Previous</button>
-              {i === items.length - 1 ? <button className="chip-btn solid" onClick={finish}>See results</button>
+              {i === items.length - 1 ? <button className="chip-btn solid" onClick={study ? () => onExit(items, {}) : finish}>{study ? 'Done' : 'See results'}</button>
                 : <button className="chip-btn solid" onClick={() => go(1)}>Next <ArrowRight size={16} /></button>}
             </div>
           </motion.section>
@@ -344,7 +356,7 @@ export default function App() {
     items.forEach((it, k) => {
       const x = ans[k]; if (!isAns(x) || (!x.done && session.mode !== 'exam')) return
       const g = ok(it.q, x.sel), p = n[it.q.id] || { a: 0, c: 0, w: 0 }
-      n[it.q.id] = { a: p.a + 1, c: p.c + (g ? 1 : 0), w: p.w + (g ? 0 : 1), l: g ? 'c' : 'w' }
+      n[it.q.id] = { a: p.a + 1, c: p.c + (g ? 1 : 0), w: p.w + (g ? 0 : 1), l: g ? 'c' : 'w', b: g ? Math.min((p.b || 0) + 1, 5) : 0, d: Date.now() + (g ? [0, 1, 3, 7, 14, 30][Math.min((p.b || 0) + 1, 5)] : 0) * 864e5 }
     })
     return n
   })

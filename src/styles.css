@@ -34,7 +34,7 @@ input[type=number]{width:90px}
 .tchip{display:inline-flex;gap:7px;align-items:center;padding:6px 12px;border-radius:99px;border:1px solid var(--line);background:var(--panel2);font-size:.84rem;font-weight:600;color:var(--mute);transition:.15s}
 .tchip i{font-style:normal;font-size:.75rem;opacity:.7}.tchip:hover{border-color:var(--amber)}
 .tchip.on{background:var(--amber);color:var(--on-amber);border-color:var(--amber)}
-.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--panel2);border-radius:14px;padding:4px;border:1px solid var(--line)}
+.seg{display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));background:var(--panel2);border-radius:14px;padding:4px;border:1px solid var(--line)}
 .seg button{position:relative;border:0;background:none;padding:10px;border-radius:10px;font-weight:600;color:var(--mute)}
 .seg button.on{color:var(--on-amber)}.seg-bg{position:absolute;inset:0;background:var(--amber);border-radius:10px}.seg button span{position:relative}
 .toggles{display:flex;gap:10px;flex-wrap:wrap}
@@ -90,3 +90,4 @@ input[type=number]{width:90px}
 .opt.multi .letter{border-radius:8px}
 .review{margin-top:22px;display:grid;gap:8px}.review summary{cursor:pointer;font-weight:700;margin-bottom:6px}.review .favcard{padding-right:16px}
 small{color:var(--mute)}
+.kpis{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}.kpis span{background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:5px 14px;font-size:.85rem;color:var(--mute)}.kpis b{color:var(--amber);font-family:var(--display);font-size:1.05rem;margin-right:4px}
